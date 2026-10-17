@@ -1,0 +1,29 @@
+{
+  "name": "pi-inmemory-mode",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Development workspace for a Pi extension",
+  "type": "module",
+  "keywords": ["pi-package"],
+  "files": ["extension.ts", "README.md"],
+  "pi": {
+    "extensions": ["./extension.ts"]
+  },
+  "scripts": {
+    "dev": "pi -e .",
+    "check": "tsc --noEmit",
+    "smoke": "node smoke.mjs"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "packageManager": "npm@11.19.1",
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "1.3.0",
+    "@types/node": "22.19.19",
+    "typescript": "7.0.2"
+  }
+}
