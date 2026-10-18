@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "target": "ES2023", "module": "ESNext", "moduleResolution": "Bundler",
+    "strict": true, "noEmit": true, "skipLibCheck": true, "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true, "allowImportingTsExtensions": true, "types": ["node", "vscode"]
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts", "../src/ide-protocol.ts"]
+}

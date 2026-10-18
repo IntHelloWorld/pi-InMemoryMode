@@ -18,6 +18,8 @@ export class Workspace {
   externalSnapshotId?: string;
   failure?: string;
   externalChange = false;
+  /** Time of the last explicit/boundary scan, never refreshed by IDE status reads. */
+  lastCheckedAt?: number;
   private transactions: Transaction[] = [];
   readonly config: MountConfig;
   readonly sessionId: string;
@@ -33,11 +35,12 @@ export class Workspace {
     await this.ownership.acquire(this.config.root);
     try {
       const { snapshot, excluded } = await this.fileIndex.scan();
+      this.lastCheckedAt = Date.now();
       await this.store.saveSnapshot(snapshot);
       this.working = this.baseline = snapshot;
       const pending = await this.store.pendingTransactions();
       this.mode = pending.length ? "needs-recovery" : "ready";
-      if (pending.length) this.failure = `发现未完成的文件事务。\n\n${EXTERNAL_CHOICE}`;
+      if (pending.length) this.failure = `Unfinished file transactions were found.\n\n${EXTERNAL_CHOICE}`;
       return excluded;
     } catch (error) {
       await this.ownership.release();
@@ -46,7 +49,7 @@ export class Workspace {
   }
 
   assertReady(): void {
-    if (this.mode !== "ready") throw new Error(this.failure ?? `当前状态为 ${this.mode}，请先执行 /memory recover。`);
+    if (this.mode !== "ready") throw new Error(this.failure ?? `The current state is ${this.mode}. Run /inmem recover first.`);
   }
 
   relative(absolute: string): string | undefined {
@@ -54,7 +57,9 @@ export class Workspace {
   }
 
   async disk(): Promise<Snapshot> {
-    return (await this.fileIndex.scan()).snapshot;
+    const snapshot = (await this.fileIndex.scan()).snapshot;
+    this.lastCheckedAt = Date.now();
+    return snapshot;
   }
 
   async consistent(): Promise<Snapshot> {
@@ -67,7 +72,7 @@ export class Workspace {
       this.mode = "needs-recovery";
       this.externalChange = true;
       this.failure = [
-        "检测到外部修改，已备份磁盘内容，尚未纳入工作内存。",
+        "External changes detected. Disk contents were backed up but have not been accepted into working memory.",
         externalChangeSummary(this.working, disk),
         EXTERNAL_CHOICE,
       ].join("\n\n");
@@ -79,7 +84,7 @@ export class Workspace {
   async knownExternalChanges(): Promise<string | undefined> {
     if (!this.externalSnapshotId) return;
     const snapshot = await this.store.loadSnapshot(this.externalSnapshotId);
-    return "以下为上次检测的结果，本次没有重新比较磁盘：\n" + externalChangeSummary(this.working, snapshot);
+    return "Results from the last inspection; disk files have not been compared again:\n" + externalChangeSummary(this.working, snapshot);
   }
 
   candidate(changes: Map<string, Buffer | null>, permissions?: Map<string, number>): Snapshot {
@@ -114,7 +119,7 @@ export class Workspace {
       return next;
     } catch (error) {
       this.mode = "needs-recovery";
-      this.failure ??= `文件提交未完成，已保留恢复日志。\n\n${EXTERNAL_CHOICE}`;
+      this.failure ??= `The file commit is incomplete. The recovery journal is preserved.\n\n${EXTERNAL_CHOICE}`;
       throw error;
     }
   }
@@ -134,7 +139,7 @@ export class Workspace {
     for (const path of paths) {
       const absolute = await safePath(this.config.root, path);
       try {
-        if (!(await lstat(absolute)).isFile()) throw new Error(`恢复目标不是普通文件：${path}`);
+        if (!(await lstat(absolute)).isFile()) throw new Error(`Recovery target is not a regular file: ${path}`);
       } catch (error) { if (!isMissing(error)) throw error; }
     }
   }
@@ -177,7 +182,7 @@ export class Workspace {
       try { await this.apply(await this.disk(), before); }
       catch { /* Both immutable versions and the journal remain for explicit recovery. */ }
       this.mode = "needs-recovery";
-      this.failure = "恢复未完成，已保存离开状态和目标版本。请执行 /memory recover。";
+      this.failure = "Recovery is incomplete. The departure state and target version are saved. Run /inmem recover.";
       throw error;
     }
   }
@@ -201,10 +206,10 @@ export class Workspace {
 
   async read(absolute: string): Promise<Buffer> {
     const path = this.relative(resolve(absolute));
-    if (!path) throw new Error("文件不在托管范围内。");
+    if (!path) throw new Error("The file is outside the managed scope.");
     await safePath(this.config.root, path);
     const content = this.working.contents.get(path);
-    if (!content) throw new Error(`文件不存在：${path}`);
+    if (!content) throw new Error(`File does not exist: ${path}`);
     return Buffer.from(content);
   }
 }

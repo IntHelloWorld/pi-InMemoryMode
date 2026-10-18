@@ -79,7 +79,7 @@ export async function harness(options: { persisted?: boolean; files?: Record<str
     get editorText() { return editorText; },
     get abortedRequests() { return abortedRequests; },
     respond(...next: typeof replies) { replies.push(...next); },
-    async mount() { await session.prompt("/memory on docs"); },
+    async mount() { await session.prompt("/inmem on docs"); },
     async text(path = "chapter.md") { return readFile(join(docs, path), "utf8"); },
     checkpoints() { return manager.getEntries().filter(checkpointEntry).map((entry) => entry.data!); },
     report(): SessionEntry {

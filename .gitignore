@@ -6,4 +6,7 @@ node_modules/
 !.env.example
 *.log
 *.tgz
+*.vsix
+vscode/dist/
+vscode/.test-data/
 .DS_Store

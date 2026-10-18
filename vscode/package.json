@@ -1,0 +1,99 @@
+{
+  "name": "pi-inmemory-vscode",
+  "displayName": "Pi InMemory",
+  "description": "Pi terminal sessions with managed-file decorations, external-change review and selection sharing.",
+  "version": "0.1.5",
+  "publisher": "IntHelloWorld",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/IntHelloWorld/pi-InMemoryMode.git", "directory": "vscode" },
+  "engines": { "vscode": "^1.100.0" },
+  "categories": ["Other"],
+  "type": "module",
+  "main": "./dist/extension.cjs",
+  "extensionKind": ["workspace"],
+  "activationEvents": ["onStartupFinished"],
+  "capabilities": { "untrustedWorkspaces": { "supported": false }, "virtualWorkspaces": { "supported": false } },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "test": "node --test tests/*.test.ts",
+    "test:host": "node scripts/test-host.mjs",
+    "vscode:prepublish": "npm run check && npm run build",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.19",
+    "@types/vscode": "1.100.0",
+    "@vscode/test-electron": "3.1.0",
+    "@vscode/vsce": "4.0.0",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  },
+  "contributes": {
+    "commands": [
+      { "command": "piInMemory.start", "title": "Pi: Start Terminal Session", "icon": "$(terminal)" },
+      { "command": "piInMemory.mount", "title": "Pi: Mount Directory in New Session", "icon": "$(folder-opened)" },
+      { "command": "piInMemory.selectSession", "title": "Pi: Select Session" },
+      { "command": "piInMemory.focus", "title": "Pi: Focus Session Terminal", "icon": "$(terminal)" },
+      { "command": "piInMemory.refresh", "title": "Pi: Refresh Connections", "icon": "$(refresh)" },
+      { "command": "piInMemory.showLogs", "title": "Pi: Show Logs", "icon": "$(output)" },
+      { "command": "piInMemory.check", "title": "Pi: Check External Changes", "icon": "$(inspect)" },
+      { "command": "piInMemory.sync", "title": "Pi: Accept All External Changes", "icon": "$(check)" },
+      { "command": "piInMemory.continue", "title": "Pi: Continue (Accept Resolved Files)", "shortTitle": "Continue", "icon": "$(debug-continue)" },
+      { "command": "piInMemory.recover", "title": "Pi: Recover (Discard External Changes)", "shortTitle": "Recover", "icon": "$(discard)" },
+      { "command": "piInMemory.diff", "title": "Pi: Show Pending File Diff", "icon": "$(diff)" },
+      { "command": "piInMemory.diffAll", "title": "Pi: Open All Pending Diffs", "icon": "$(diff-multiple)" },
+      { "command": "piInMemory.addSelection", "title": "Pi: Add Selection to Input" },
+      { "command": "piInMemory.sendSelection", "title": "Pi: Send Selection" }
+    ],
+    "menus": {
+      "explorer/context": [
+        { "command": "piInMemory.mount", "when": "explorerResourceIsFolder && resourceScheme == file && isWorkspaceTrusted", "group": "navigation@90" },
+        { "command": "piInMemory.diff", "when": "piInMemory.connected && resourceScheme == file && !explorerResourceIsFolder", "group": "3_compare@90" }
+      ],
+      "editor/context": [
+        { "command": "piInMemory.addSelection", "when": "editorHasSelection && isWorkspaceTrusted", "group": "pi@1" },
+        { "command": "piInMemory.sendSelection", "when": "editorHasSelection && isWorkspaceTrusted", "group": "pi@2" },
+        { "command": "piInMemory.continue", "when": "piInMemory.pending", "group": "piReview@1" },
+        { "command": "piInMemory.recover", "when": "piInMemory.pending", "group": "piReview@2" }
+      ],
+      "view/title": [
+        { "command": "piInMemory.focus", "when": "view == piInMemory.files", "group": "navigation@1" },
+        { "command": "piInMemory.check", "when": "view == piInMemory.files && piInMemory.mounted", "group": "navigation@2" },
+        { "command": "piInMemory.refresh", "when": "view == piInMemory.files", "group": "navigation@3" },
+        { "command": "piInMemory.showLogs", "when": "view == piInMemory.files", "group": "navigation@4" },
+        { "command": "piInMemory.diffAll", "when": "view == piInMemory.files && piInMemory.hasChanges", "group": "navigation@5" },
+        { "command": "piInMemory.continue", "when": "view == piInMemory.files && piInMemory.pending", "group": "navigation@6" },
+        { "command": "piInMemory.recover", "when": "view == piInMemory.files && piInMemory.pending", "group": "navigation@7" },
+        { "command": "piInMemory.selectSession", "when": "view == piInMemory.files" }
+      ],
+      "view/item/context": [
+        { "command": "piInMemory.diff", "when": "view == piInMemory.files && viewItem == piChange", "group": "inline" }
+      ],
+      "editor/title": [
+        { "command": "piInMemory.diffAll", "when": "piInMemory.hasChanges", "group": "navigation@90" },
+        { "command": "piInMemory.continue", "when": "piInMemory.pending", "group": "navigation@91" },
+        { "command": "piInMemory.recover", "when": "piInMemory.pending", "group": "navigation@92" }
+      ]
+    },
+    "viewsContainers": { "activitybar": [{ "id": "piInMemory", "title": "Pi InMemory", "icon": "media/pi.svg" }] },
+    "views": { "piInMemory": [{ "id": "piInMemory.files", "name": "Mounted Files", "contextualTitle": "Pi InMemory" }] },
+    "viewsWelcome": [
+      { "view": "piInMemory.files", "contents": "Use Pi in the terminal and review mounted files here.\n[Start Pi](command:piInMemory.start)\n[Select a Running Session](command:piInMemory.selectSession)", "when": "!piInMemory.connected" }
+    ],
+    "colors": [
+      { "id": "piInMemory.managed", "description": "Color for files managed by Pi", "defaults": { "dark": "#7CB7FF", "light": "#245FA8", "highContrast": "#FFFFFF" } }
+    ],
+    "configuration": {
+      "title": "Pi InMemory",
+      "properties": {
+        "piInMemory.executable": { "type": "string", "default": "pi", "description": "Path or command name of the Pi executable.", "scope": "machine" },
+        "piInMemory.nodeExecutable": { "type": "string", "default": "", "description": "Optional path to the Node.js executable. When empty, look alongside Pi, then on PATH and in common installation directories.", "scope": "machine" },
+        "piInMemory.pluginPath": { "type": "string", "default": "", "description": "Optional absolute path to this Pi plugin repository. When empty, use the plugin installed in Pi.", "scope": "machine" },
+        "piInMemory.arguments": { "type": "array", "items": { "type": "string" }, "default": [], "description": "Extra arguments for Pi. Each item is passed as a separate argument.", "scope": "machine" },
+        "piInMemory.autoOpenChanges": { "type": "boolean", "default": true, "description": "Automatically open all detected pending changes in one multi-file diff. Existing files on the modified side are editable." }
+      }
+    }
+  }
+}

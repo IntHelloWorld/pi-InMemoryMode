@@ -31,14 +31,14 @@ const bundleStart = "showTreeSelector(initialSelectedId){let tree=this.sessionMa
 const bundleReplacement = `${MARKER}async showTreeSelector(initialSelectedId){const inmemoryTreeOptions={type:"session_tree_open",tree:this.sessionManager.getTree(),currentLeafId:this.sessionManager.getLeafId(),initialFilterMode:this.settingsManager.getTreeFilterMode(),skipSummaryPrompt:this.settingsManager.getBranchSummarySkipPrompt()};await this.session.extensionRunner.emit(inmemoryTreeOptions);if(inmemoryTreeOptions.cancel)return;let{tree,currentLeafId:realLeafId,initialFilterMode}=inmemoryTreeOptions;`;
 
 function replaceOnce(source, before, after, path) {
-  if (source.split(before).length !== 2) throw new Error(`宿主文件与已验证版本不一致，未修改：${path}`);
+  if (source.split(before).length !== 2) throw new Error(`Host file differs from the verified version; left unchanged: ${path}`);
   return source.replace(before, after);
 }
 
 function treeTransform(source, path, bundled) {
   if (source.includes(MARKER)) {
     if (!source.includes("session_tree_open") || !source.includes("!inmemoryTreeOptions.skipSummaryPrompt")) {
-      throw new Error(`检测到不完整的树接口补丁，未修改：${path}`);
+      throw new Error(`An incomplete tree API patch was detected; left unchanged: ${path}`);
     }
     return source;
   }
@@ -89,7 +89,7 @@ async function prepare(directory, restore) {
   const root = await realpath(directory);
   const metadata = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
   if (metadata.name !== HOST_NAME || metadata.version !== SUPPORTED_VERSION) {
-    throw new Error(`界面兼容补丁仅适配 ${HOST_NAME} ${SUPPORTED_VERSION}，实际为 ${metadata.name} ${metadata.version}。`);
+    throw new Error(`The UI compatibility patch requires ${HOST_NAME} ${SUPPORTED_VERSION}; found ${metadata.name} ${metadata.version}.`);
   }
   const files = [
     { path: join(root, "dist/modes/interactive/interactive-mode.js"), kind: "interactive" },
@@ -103,7 +103,7 @@ async function prepare(directory, restore) {
     const source = await readFile(path, "utf8");
     if (source.includes(bundleStart) || source.includes(MARKER)) candidates.push({ path, kind: "bundle" });
   }
-  if (candidates.length !== 1) throw new Error(`未找到唯一的原生界面 bundle，未修改：${root}`);
+  if (candidates.length !== 1) throw new Error(`Could not identify a unique native UI bundle; left unchanged: ${root}`);
   files.push(...candidates);
   const changes = [];
   for (const { path, kind } of files) {
@@ -113,15 +113,15 @@ async function prepare(directory, restore) {
     catch (error) { if (error.code !== "ENOENT") throw error; }
     if (original !== undefined && current !== original &&
       transformed(original, path, kind) !== current && transformed(original, path, kind, true) !== current) {
-      throw new Error(`宿主文件还包含其他修改，拒绝覆盖：${path}`);
+      throw new Error(`The host file contains other changes; refusing to overwrite: ${path}`);
     }
     if (restore) {
       if (!current.includes(MARKER) && !current.includes(LIST_MARKER)) continue;
-      if (original === undefined) throw new Error(`缺少宿主原文件备份，拒绝恢复：${path}`);
+      if (original === undefined) throw new Error(`The original host backup is missing; refusing to restore: ${path}`);
       changes.push({ path, current, next: original, restore: true });
     } else {
       if ((current.includes(MARKER) || current.includes(LIST_MARKER)) && original === undefined) {
-        throw new Error(`缺少宿主原文件备份，拒绝更新：${path}`);
+        throw new Error(`The original host backup is missing; refusing to update: ${path}`);
       }
       const next = transformed(original ?? current, path, kind);
       if (next !== current) changes.push({ path, current, next, restore: false });
@@ -132,7 +132,7 @@ async function prepare(directory, restore) {
 
 async function writeChange(change) {
   const { path, next, current, restore } = change;
-  if (await readFile(path, "utf8") !== current) throw new Error(`检查后宿主文件发生变化，拒绝覆盖：${path}`);
+  if (await readFile(path, "utf8") !== current) throw new Error(`The host file changed after inspection; refusing to overwrite: ${path}`);
   if (!restore) {
     try { await copyFile(path, path + BACKUP_SUFFIX, constants.COPYFILE_EXCL); }
     catch (error) {
@@ -160,14 +160,14 @@ async function globalPackage(local) {
       } catch (error) { if (error.code !== "ENOENT") throw error; }
       current = dirname(current);
     }
-    throw new Error(`无法从 pi 启动文件定位安装目录：${command}`);
+    throw new Error(`Cannot locate the installation directory from the Pi launcher: ${command}`);
   }
-  throw new Error("PATH 中未找到全局 pi 命令。");
+  throw new Error("The global pi command was not found on PATH.");
 }
 
 async function main() {
   const args = new Set(process.argv.slice(2));
-  for (const arg of args) if (arg !== "--global" && arg !== "--restore") throw new Error(`未知参数：${arg}`);
+  for (const arg of args) if (arg !== "--global" && arg !== "--restore") throw new Error(`Unknown argument: ${arg}`);
   const local = resolve(dirname(fileURLToPath(import.meta.resolve(HOST_NAME))), "..");
   const directories = new Set([local]);
   if (args.has("--global")) directories.add(await globalPackage(local));
@@ -176,7 +176,7 @@ async function main() {
   for (const directory of directories) plans.push(await prepare(directory, args.has("--restore")));
   for (const { root, changes } of plans) {
     for (const change of changes) await writeChange(change);
-    console.log(`Pi ${SUPPORTED_VERSION} 界面兼容接口${args.has("--restore") ? "已恢复" : "已就绪"}：${root}`);
+    console.log(`Pi ${SUPPORTED_VERSION} UI compatibility hooks ${args.has("--restore") ? "restored" : "ready"}: ${root}`);
   }
 }
 

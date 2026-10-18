@@ -26,6 +26,8 @@ Tests run in temporary directories with simulated model responses. No model acco
 ## Implementation conventions
 
 - Keep TypeScript strict and use the existing two-space indentation and `.ts` import extensions.
+- Use English for plugin and VS Code UI, notifications, logs, tool descriptions and model-facing metadata. Preserve user text and filenames. Pi commands belong to `/inmem`; leave `/memory` unregistered so other plugins can use it.
+- Declare Pi's host-provided SDK packages and `typebox` in `peerDependencies` with a `"*"` range, never in runtime `dependencies`. Pin local build/test versions in `devDependencies`; compatibility remains limited to the Pi version checked by the UI patch.
 - Test behavior and outcomes. Avoid tests that only match implementation strings.
 - Keep workspace mutations serialized and preserve recovery journals on failure.
 - Keep a task's model-facing baseline fixed. Successful edits update working memory immediately; the next task gets a fresh baseline.

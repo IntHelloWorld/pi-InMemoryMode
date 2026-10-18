@@ -17,7 +17,7 @@ export interface Transaction {
 }
 
 function objectId(id: string): string {
-  if (!/^[a-f0-9]{64}$/.test(id)) throw new Error("无效的内容对象引用。");
+  if (!/^[a-f0-9]{64}$/.test(id)) throw new Error("Invalid content object reference.");
   return id;
 }
 
@@ -41,7 +41,7 @@ export class Store {
     const path = join(this.directory, kind, objectId(id));
     try {
       const existing = await readFile(path);
-      if (!existing.equals(Buffer.from(content))) throw new Error(`不可变存储发生内容冲突：${kind}/${id}`);
+      if (!existing.equals(Buffer.from(content))) throw new Error(`Content collision in immutable storage: ${kind}/${id}`);
     } catch (error) {
       if (!isMissing(error)) throw error;
       await atomicWrite(path, content);
@@ -50,19 +50,19 @@ export class Store {
 
   async loadSnapshot(id: string): Promise<Snapshot> {
     const raw = await readFile(join(this.directory, "manifests", objectId(id)));
-    if (hash(raw) !== id) throw new Error(`文件清单损坏：${id}`);
+    if (hash(raw) !== id) throw new Error(`Corrupt file manifest: ${id}`);
     const manifest = JSON.parse(raw.toString()) as Manifest;
-    if (manifest.version !== 1 || !manifest.files) throw new Error("不支持的文件清单格式。");
+    if (manifest.version !== 1 || !manifest.files) throw new Error("Unsupported file manifest format.");
     const contents = new Map<string, Buffer>();
     const modes = new Map<string, number>();
     for (const [path, version] of Object.entries(manifest.files)) {
       const bytes = await readFile(join(this.directory, "objects", objectId(version.hash)));
-      if (hash(bytes) !== version.hash || bytes.length !== version.bytes) throw new Error(`文件内容对象损坏：${path}`);
+      if (hash(bytes) !== version.hash || bytes.length !== version.bytes) throw new Error(`Corrupt file content object: ${path}`);
       contents.set(path, bytes);
       modes.set(path, version.mode);
     }
     const snapshot = snapshotFrom(contents, modes, this.config);
-    if (snapshot.id !== id) throw new Error("文件清单未通过规范化校验。");
+    if (snapshot.id !== id) throw new Error("File manifest failed canonical validation.");
     return snapshot;
   }
 
@@ -76,13 +76,13 @@ export class Store {
   async verifyCheckpoint(checkpoint: Checkpoint): Promise<void> {
     const expected = JSON.stringify(checkpoint);
     const actual = await readFile(join(this.directory, "checkpoints", hash(expected)), "utf8");
-    if (actual !== expected) throw new Error("检查点记录缺失或损坏。");
+    if (actual !== expected) throw new Error("Checkpoint record is missing or corrupt.");
     await this.loadSnapshot(checkpoint.workingId);
     await this.loadSnapshot(checkpoint.baselineId);
   }
 
   async journal(transaction: Transaction): Promise<void> {
-    if (!/^[\w-]+$/.test(transaction.id)) throw new Error("无效的事务引用。");
+    if (!/^[\w-]+$/.test(transaction.id)) throw new Error("Invalid transaction reference.");
     await atomicWrite(join(this.directory, "transactions", `${transaction.id}.json`), JSON.stringify(transaction));
   }
 

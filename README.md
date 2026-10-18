@@ -10,7 +10,7 @@ A [Pi](https://github.com/earendil-works/pi) extension for editing text document
 
 At the start of each user task, InMemoryMode places the managed files' full text before the instruction. Successful edits update files and working memory immediately, while the initial snapshot stays fixed for that task. The next task receives a fresh snapshot. Pi's native `/tree` restores the corresponding files and conversation branch together.
 
-**Status:** experimental, v0.1.0. Distributed as source; not published to npm. Commands and notices are currently in Chinese. Requires **Node.js 24** and **Pi 1.3.0**; the included UI compatibility patch checks that exact Pi version.
+**Status:** experimental, v0.1.0. Distributed as source; not published to npm. All plugin and companion-extension UI, messages and logs use English. Requires **Node.js 24** and **Pi 1.3.0**; the included UI compatibility patch checks that exact Pi version.
 
 ## Features
 
@@ -19,6 +19,7 @@ At the start of each user task, InMemoryMode places the managed files' full text
 - **Branch-aware history:** restore supported checkpoints with `/tree`; original chat and tool records remain intact.
 - **Explicit external changes:** choose whether to accept an external edit or restore the last valid working state.
 - **On-demand file checks:** reuse verified content and hashes for unchanged files, with additional checks for recent timestamps. No file watcher or polling.
+- **VS Code integration:** the [companion extension](vscode/README.md) keeps Pi in the integrated terminal and adds managed-file decorations, external-change review, snapshot diffs and selection sharing.
 - **Smaller later requests:** omit repeated edit bodies from completed tasks in the derived model input, preserving raw session history.
 
 ## Quick start
@@ -33,7 +34,7 @@ npm run dev
 Before the first chat message in the new Pi session, run:
 
 ```text
-/memory on examples/documents
+/inmem on examples/documents
 ```
 
 Then ask Pi to edit the example, such as “Add three sections to this outline.” Configure your model through Pi's `/login` if needed. Use `/tree` to select a completed task and restore its files. Selecting a user instruction returns to the state before that instruction.
@@ -49,23 +50,63 @@ pi install /absolute/path/to/pi-InMemoryMode
 npm run setup:tree -- --global
 ```
 
-Restart Pi, open it in your project, and run `/memory on ./docs` before the first chat message. For a temporary load, first prepare the compatibility patch, then run `pi -e /absolute/path/to/pi-InMemoryMode` in your project.
+Restart Pi, open it in your project, and run `/inmem on ./docs` before the first chat message. For a temporary load, first prepare the compatibility patch, then run `pi -e /absolute/path/to/pi-InMemoryMode` in your project.
 
 `npm run dev` and `npm test` install the UI patch into the project's local Pi dependency. `setup:tree -- --global` also patches the global installation, enabling checkpoint filtering, direct tree navigation without a summary dialog, and session badges. It validates the host version, keeps original-file backups, and does not change global settings. **Restart Pi after patching; `/reload` only reloads the extension.** Reapply after reinstalling Pi. To undo the patch, run `npm run setup:tree -- --global --restore` and restart Pi.
+
+## Use with VS Code
+
+The repository also includes **Pi InMemory for VS Code**, an optional [companion extension](vscode/README.md) in `vscode/`. Pi continues to run in the integrated terminal; the extension connects its session and managed files to the editor.
+
+| Feature | In VS Code |
+| --- | --- |
+| Managed files | `M` decorations and a **Mounted Files** sidebar show the managed scope. Detected external changes show `!`. |
+| Mount a folder | Right-click and choose **Pi: Mount Directory in New Session**. Each session binds one directory. |
+| Review changes | Open all pending files in one reusable diff page. The Pi version is read-only; existing modified files are editable. |
+| Accept or recover | **Continue** saves and accepts resolved files; **Recover** discards external changes and retains successful assistant edits. Both confirm the entire directory's impact. |
+| Share a selection | **Pi: Add Selection to Input** or **Pi: Send Selection** includes the path, line range and exact selected text, including unsaved content. |
+| Inspect the connection | Select a Pi session, return to its terminal, and open **Pi: Show Logs** in the **Pi InMemory** Output channel. |
+
+Prepare the Pi plugin and, if using global Pi, its compatibility patch as described above. Then build the companion from the repository root:
+
+```bash
+npm --prefix vscode ci --ignore-scripts
+npm --prefix vscode run package
+code --install-extension vscode/pi-inmemory-vscode-0.1.5.vsix
+```
+
+If the `code` command is unavailable, use **Extensions: Install from VSIX** in VS Code. The companion is currently **v0.1.5**, distributed as a local VSIX rather than through the Marketplace.
+
+Set the executable and repository paths in VS Code user settings, using your own absolute paths:
+
+```json
+{
+  "piInMemory.executable": "/absolute/path/to/pi",
+  "piInMemory.nodeExecutable": "/absolute/path/to/node",
+  "piInMemory.pluginPath": "/absolute/path/to/pi-InMemoryMode"
+}
+```
+
+`nodeExecutable` is optional when Node can be discovered alongside Pi or on PATH. Open and trust a local project, then right-click a folder to start a mounted Pi session. The companion currently supports **local desktop VS Code 1.100+**; remote and browser workspaces are not supported.
+
+Saving a reviewed file does not accept it into Pi automatically. Continue and Recover restore any pending instruction to the input, ready for you to send again; neither starts the model automatically. See the [companion README](vscode/README.md) for settings and workflows, and the [development guide](vscode/docs/development.md) for the bridge protocol and extension-host tests.
 
 ## Commands
 
 | Command | Purpose |
 | --- | --- |
-| `/memory on [directory]` | Create an InMemory session before chatting; defaults to Pi's working directory. |
-| `/memory status` | Show the last known state without scanning files. |
-| `/memory sync` | Accept current external changes and record their file version. |
-| `/memory recover` | Restore the last valid working state, retaining successful assistant edits. |
+| `/inmem on [directory]` | Create an InMemory session before chatting; defaults to Pi's working directory. |
+| `/inmem status` | Show the last known state without scanning files. |
+| `/inmem check` | Explicitly inspect external changes without accepting them. |
+| `/inmem sync` | Accept current external changes and record their file version. |
+| `/inmem recover` | Restore the last valid working state, retaining successful assistant edits. |
 | `/tree` | Restore a supported file checkpoint and its conversation branch. |
 | `/resume` | Open an existing ordinary or InMemory session. |
 | `/new` | Start a new session. |
 
 `sync` and `recover` wait for a new instruction; neither automatically calls the model. To undo assistant edits, select an earlier checkpoint in `/tree`.
+
+Plugin commands use `/inmem`. The old `/memory` command is not registered or kept as an alias, allowing other plugins to use it. After updating an already running Pi session, use `/reload` to load the new command names and English messages.
 
 ## External edits and file versions
 
@@ -116,6 +157,7 @@ extension.ts          Pi extension entry point
 src/                  Workspace, versions, tools, context, and session integration
 tests/                Functional and integration tests
 scripts/              Reversible Pi UI compatibility patch
+vscode/               Optional VS Code companion, with its own README and development guide
 examples/documents/   Small sample workspace
 docs/                 Usage, design, and implementation notes
 smoke.mjs             CLI/RPC smoke test
@@ -126,6 +168,7 @@ smoke.mjs             CLI/RPC smoke test
 - [Detailed usage guide (中文)](docs/usage.zh-CN.md)
 - [Design baseline (中文)](docs/design.md) — original design and acceptance criteria.
 - [Implementation and validation (中文)](docs/implementation.md) — current behavior and verification boundaries.
+- [VS Code companion extension](vscode/README.md) and its [development guide](vscode/docs/development.md).
 - [Pi extension documentation](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md)
 
 ## License

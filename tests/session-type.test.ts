@@ -13,6 +13,33 @@ import { call, harness, snapshotText } from "./helpers.ts";
 
 type Harness = Awaited<ReturnType<typeof harness>>;
 
+test("inmem commands mount and recover without taking another extension's memory command", async () => {
+  const received: string[] = [];
+  const h = await harness({ probe: (pi) => {
+    pi.registerCommand("memory", {
+      description: "Another extension's memory command",
+      handler: async (args) => { received.push(args); },
+    });
+  } });
+  try {
+    await h.session.prompt("/memory status");
+    assert.deepEqual(received, ["status"]);
+    assert.equal(h.checkpoints().length, 0);
+    await h.session.prompt("/inmem on docs");
+    const mounted = h.checkpoints().at(-1)!;
+    assert.equal(mounted.kind, "mount");
+    assert.equal(mounted.config.root, h.docs);
+    await writeFile(join(h.docs, "chapter.md"), "external edit");
+    await h.session.prompt("/inmem check");
+    await h.session.prompt("/inmem recover");
+    assert.equal(await h.text(), "initial\n");
+    await h.session.prompt("/memory list");
+    assert.deepEqual(received, ["status", "list"]);
+    assert.equal(h.requests.length, 0);
+    assert.deepEqual(h.errors, []);
+  } finally { await h.close(); }
+});
+
 async function tree(h: Harness) {
   const event: SessionTreeOpenEvent = { type: "session_tree_open", tree: h.manager.getTree(),
     currentLeafId: h.manager.getLeafId(), initialFilterMode: "default", skipSummaryPrompt: false };
@@ -45,8 +72,8 @@ test("new sessions become dedicated InMemory sessions; off and rebinding cannot 
     await h.session.prompt("first InMemory task");
     const before = structuredClone(h.manager.getEntries());
     const count = h.requests.length;
-    await h.session.prompt("/memory off");
-    await h.session.prompt("/memory on another-directory");
+    await h.session.prompt("/inmem off");
+    await h.session.prompt("/inmem on another-directory");
     assert.deepEqual(h.manager.getEntries(), before);
     assert.equal(h.requests.length, count);
     assert.equal(sessionType(h.manager.getEntries()), "inmemory");
@@ -101,9 +128,9 @@ test("legacy off routes remain InMemory, block model requests, preserve files, a
     await h.session.prompt("cannot silently continue as ordinary");
     assert.equal(h.requests.length, requestCount);
     assert.equal(await h.text(), "current disk");
-    await h.session.prompt("/memory off");
+    await h.session.prompt("/inmem off");
     assert.equal(h.checkpoints().at(-1)!.enabled, false);
-    await h.session.prompt("/memory sync");
+    await h.session.prompt("/inmem sync");
     assert.equal(h.checkpoints().at(-1)!.kind, "external");
     assert.equal(h.checkpoints().at(-1)!.enabled, true);
     h.respond("dedicated continuation");
@@ -129,7 +156,7 @@ test("tree hides and rejects legacy ordinary nodes, while valid InMemory reports
     const legacy = await legacyOrdinaryRoute(h);
     await writeFile(join(h.docs, "chapter.md"), "ordinary era file");
     await h.session.reload();
-    await h.session.prompt("/memory sync");
+    await h.session.prompt("/inmem sync");
     h.respond("recovered report");
     await h.session.prompt("recovered task");
     const recovered = h.report();
@@ -173,7 +200,7 @@ test("legacy sessions with unavailable snapshots never fall back to ordinary mod
     assert.equal(h.requests.length, 1);
     assert.equal(sessionType(h.manager.getEntries()), "inmemory");
     assert.equal(await h.text(), "untracked disk");
-    await h.session.prompt("/memory sync");
+    await h.session.prompt("/inmem sync");
     h.respond("recovered");
     await h.session.prompt("new task");
     assert.equal(snapshotText(h.requests.at(-1)!), 'path="chapter.md" bytes=14\nuntracked disk');
@@ -209,7 +236,7 @@ test("ordinary routes before a legacy first mount cannot be selected or resumed 
     await h.session.reload();
     await h.session.prompt("still blocked after reload");
     assert.equal(h.requests.length, 1);
-    await h.session.prompt("/memory sync");
+    await h.session.prompt("/inmem sync");
     h.respond("memory continuation");
     await h.session.prompt("resume dedicated operation");
     assert.equal(snapshotText(h.requests.at(-1)!), 'path="chapter.md" bytes=8\ninitial\n');

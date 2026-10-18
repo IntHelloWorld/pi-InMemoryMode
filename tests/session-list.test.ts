@@ -38,10 +38,10 @@ test("resume badges identify fixed session categories without renaming or rewrit
     assert.equal(active.sessions.find((info) => info.id === ordinary.getSessionId())?.name, "Ordinary title");
     assert.deepEqual(await readFile(h.manager.getSessionFile()!), activeBytes);
     assert.deepEqual(await readFile(ordinary.getSessionFile()!), plainBytes);
-    await h.session.prompt("/memory off");
+    await h.session.prompt("/inmem off");
     const unchanged = await list(h);
     assert.equal(unchanged.sessions.find((info) => info.id === h.manager.getSessionId())?.displayBadge, "[InMemory]");
-    await h.session.prompt("/memory on");
+    await h.session.prompt("/inmem on");
     assert.equal((await list(h)).sessions.find((info) => info.id === h.manager.getSessionId())?.displayBadge, "[InMemory]");
     assert.deepEqual(h.errors, []);
   } finally { await h.close(); }

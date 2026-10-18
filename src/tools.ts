@@ -58,7 +58,7 @@ export function registerFileTools(pi: ExtensionAPI, controller: Controller): voi
         signal?.throwIfAborted();
         const snapshot = await workspace.commit(changes, signal);
         return { ...result, content: [...result.content,
-          { type: "text" as const, text: `实际生效的差异：\n${result.details?.diff ?? ""}` }],
+          { type: "text" as const, text: `Applied diff:\n${result.details?.diff ?? ""}` }],
           details: { ...result.details!, inmemory: { taskId: controller.task?.id, path: target.relative, snapshotId: snapshot.id } } };
       });
     },
@@ -86,33 +86,33 @@ export function registerFileTools(pi: ExtensionAPI, controller: Controller): voi
     },
   });
   pi.registerTool({
-    name: "memory_delete", label: "Delete managed file", description: "删除一个托管文本文件，保留可由 /tree 恢复的版本。",
+    name: "memory_delete", label: "Delete managed file", description: "Delete a managed text file while preserving a version recoverable with /tree.",
     parameters: Type.Object({ path: Type.String() }),
     async execute(_id, params, signal, _update, ctx) {
       const target = routed(params.path, ctx);
-      if (!target) throw new Error("memory_delete 只处理启用中的托管文件。");
+      if (!target) throw new Error("memory_delete only handles files in the active managed scope.");
       const workspace = controller.workspace!;
       return managed(ctx, async () => {
         await workspace.read(target.absolute);
         const snapshot = await workspace.commit(new Map([[target.relative, null]]), signal);
-        return { content: [{ type: "text", text: `已删除 ${JSON.stringify(target.relative)}。` }], details: { snapshotId: snapshot.id } };
+        return { content: [{ type: "text", text: `Deleted ${JSON.stringify(target.relative)}.` }], details: { snapshotId: snapshot.id } };
       });
     },
   });
   pi.registerTool({
-    name: "memory_move", label: "Move managed file", description: "移动或重命名托管文件；源和目标必须都在托管范围内，目标必须不存在。",
+    name: "memory_move", label: "Move managed file", description: "Move or rename a managed file. Both paths must be within the managed scope, and the destination must not exist.",
     parameters: Type.Object({ from: Type.String(), to: Type.String() }),
     async execute(_id, params, signal, _update, ctx) {
       const from = routed(params.from, ctx);
       const to = routed(params.to, ctx);
-      if (!from || !to) throw new Error("移动的源和目标必须都是托管文本路径。");
+      if (!from || !to) throw new Error("Both the source and destination must be managed text paths.");
       const workspace = controller.workspace!;
       return managed(ctx, async () => {
-        if (workspace.working.contents.has(to.relative)) throw new Error("目标文件已存在。");
+        if (workspace.working.contents.has(to.relative)) throw new Error("The destination file already exists.");
         const bytes = await workspace.read(from.absolute);
         const permissions = new Map([[to.relative, workspace.working.manifest.files[from.relative]!.mode]]);
         const snapshot = await workspace.commit(new Map([[from.relative, null], [to.relative, bytes]]), signal, permissions);
-        return { content: [{ type: "text", text: `已将 ${JSON.stringify(from.relative)} 移到 ${JSON.stringify(to.relative)}。` }], details: { snapshotId: snapshot.id } };
+        return { content: [{ type: "text", text: `Moved ${JSON.stringify(from.relative)} to ${JSON.stringify(to.relative)}.` }], details: { snapshotId: snapshot.id } };
       });
     },
   });

@@ -37,38 +37,38 @@ export function resolvePath(cwd: string, path: string): string {
 export async function mountConfig(cwd: string, directory: string): Promise<MountConfig> {
   const canonicalCwd = await realpath(cwd);
   const root = await realpath(resolvePath(canonicalCwd, directory));
-  if (!(await lstat(root)).isDirectory()) throw new Error("挂载路径必须是目录。");
+  if (!(await lstat(root)).isDirectory()) throw new Error("The mount path must be a directory.");
   let overrides: Record<string, unknown> = {};
   try {
     overrides = JSON.parse(await readFile(join(canonicalCwd, ".pi/inmemory.json"), "utf8"));
   } catch (error) {
     if (!isMissing(error)) throw error;
   }
-  if (!overrides || Array.isArray(overrides) || typeof overrides !== "object") throw new Error("inmemory.json 必须是配置对象。");
+  if (!overrides || Array.isArray(overrides) || typeof overrides !== "object") throw new Error("inmemory.json must contain a configuration object.");
   for (const key of Object.keys(overrides)) {
-    if (!(key in DEFAULTS)) throw new Error(`未知配置项：${key}`);
+    if (!(key in DEFAULTS)) throw new Error(`Unknown configuration option: ${key}`);
   }
   const config = { ...DEFAULTS, ...overrides, cwd: canonicalCwd, root } as MountConfig;
   for (const key of ["maxFiles", "maxFileBytes", "maxTotalBytes", "maxSnapshotTokens"] as const) {
-    if (!Number.isSafeInteger(config[key]) || config[key] <= 0) throw new Error(`${key} 必须是正整数。`);
+    if (!Number.isSafeInteger(config[key]) || config[key] <= 0) throw new Error(`${key} must be a positive integer.`);
   }
-  if (typeof config.includeHidden !== "boolean") throw new Error("includeHidden 必须是布尔值。");
+  if (typeof config.includeHidden !== "boolean") throw new Error("includeHidden must be a boolean.");
   if (!Array.isArray(config.extensions) || !config.extensions.every((item) => typeof item === "string" && /^\.[\w-]+$/.test(item))) {
-    throw new Error("extensions 必须是文件扩展名数组，如 [\".md\", \".txt\"]。");
+    throw new Error("extensions must be an array of file extensions, such as [\".md\", \".txt\"].");
   }
   config.extensions = [...new Set(config.extensions.map((item) => item.toLowerCase()))].sort();
   if (!Array.isArray(config.exclude) || !config.exclude.every((item) => typeof item === "string" && item.length > 0 && !item.includes("..") && !isAbsolute(item))) {
-    throw new Error("exclude 必须是相对路径前缀数组。");
+    throw new Error("exclude must be an array of relative path prefixes.");
   }
   return config;
 }
 
 export function excludedReason(config: MountConfig, rel: string): string | undefined {
   const parts = rel.split(sep);
-  if (parts.some((part) => EXCLUDED_DIRECTORIES.has(part))) return "管理目录或依赖、构建产物";
-  if (parts.some((part) => SENSITIVE_NAME.test(part))) return "账户或敏感配置";
-  if (!config.includeHidden && parts.some((part) => part.startsWith("."))) return "隐藏路径";
-  if (config.exclude.some((prefix) => rel === prefix || rel.startsWith(`${prefix.replace(/\/$/, "")}${sep}`))) return "显式排除规则";
+  if (parts.some((part) => EXCLUDED_DIRECTORIES.has(part))) return "metadata, dependencies or build output";
+  if (parts.some((part) => SENSITIVE_NAME.test(part))) return "account or sensitive configuration";
+  if (!config.includeHidden && parts.some((part) => part.startsWith("."))) return "hidden path";
+  if (config.exclude.some((prefix) => rel === prefix || rel.startsWith(`${prefix.replace(/\/$/, "")}${sep}`))) return "explicit exclusion rule";
   return undefined;
 }
 
@@ -80,7 +80,7 @@ export function managedPath(config: MountConfig, absolute: string): string | und
 
 export function validateRelative(path: string): void {
   if (!path || isAbsolute(path) || path.split(/[\\/]/).some((part) => part === ".." || part === "." || part === "")) {
-    throw new Error(`不安全的文件路径：${path}`);
+    throw new Error(`Unsafe file path: ${path}`);
   }
 }
 
@@ -88,15 +88,15 @@ export function validateRelative(path: string): void {
 export async function safePath(root: string, rel: string): Promise<string> {
   validateRelative(rel);
   const absolute = resolve(root, rel);
-  if (!inside(root, absolute)) throw new Error(`文件越出托管目录：${rel}`);
+  if (!inside(root, absolute)) throw new Error(`File is outside the managed directory: ${rel}`);
   const parts = absolute.split(sep).filter(Boolean);
   let current: string = sep;
   for (const part of parts) {
     current = join(current, part);
     try {
       const info = await lstat(current);
-      if (info.isSymbolicLink()) throw new Error(`不支持符号链接：${current}`);
-      if (current !== absolute && !info.isDirectory()) throw new Error(`父路径不是目录：${current}`);
+      if (info.isSymbolicLink()) throw new Error(`Symbolic links are not supported: ${current}`);
+      if (current !== absolute && !info.isDirectory()) throw new Error(`Parent path is not a directory: ${current}`);
     } catch (error) {
       if (!isMissing(error)) throw error;
     }
@@ -109,34 +109,34 @@ export function isMissing(error: unknown): boolean {
 }
 
 export function validateText(bytes: Buffer, name: string): void {
-  if (bytes.includes(0)) throw new Error(`不支持含 NUL 字节的文件：${name}`);
+  if (bytes.includes(0)) throw new Error(`Files containing NUL bytes are not supported: ${name}`);
   try { new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
-  catch { throw new Error(`文件不是有效 UTF-8：${name}`); }
+  catch { throw new Error(`File is not valid UTF-8: ${name}`); }
 }
 
 function assembleSnapshot(contents: Map<string, Buffer>, versions: Map<string, FileVersion>, config: MountConfig): Snapshot {
-  if (contents.size > config.maxFiles) throw new Error(`文件数超出上限 ${config.maxFiles}。`);
+  if (contents.size > config.maxFiles) throw new Error(`File count exceeds the limit of ${config.maxFiles}.`);
   const files: Manifest["files"] = Object.create(null);
   let total = 0;
   for (const path of [...contents.keys()].sort()) {
     const file = versions.get(path)!;
-    if (file.bytes > config.maxFileBytes) throw new Error(`文件 ${path} 超出单文件上限 ${config.maxFileBytes} 字节。`);
+    if (file.bytes > config.maxFileBytes) throw new Error(`File ${path} exceeds the per-file limit of ${config.maxFileBytes} bytes.`);
     total += file.bytes;
     files[path] = file;
   }
-  if (total > config.maxTotalBytes) throw new Error(`正文总量超出上限 ${config.maxTotalBytes} 字节。`);
+  if (total > config.maxTotalBytes) throw new Error(`Total content exceeds the limit of ${config.maxTotalBytes} bytes.`);
   const manifest: Manifest = { version: 1, files };
   return { id: hash(JSON.stringify(manifest)), manifest, contents: new Map(contents) };
 }
 
 /** Reuse versions only for the same immutable in-memory buffers, never from disk metadata. */
 export function snapshotFrom(contents: Map<string, Buffer>, modes: Map<string, number>, config: MountConfig, previous?: Snapshot): Snapshot {
-  if (contents.size > config.maxFiles) throw new Error(`文件数超出上限 ${config.maxFiles}。`);
+  if (contents.size > config.maxFiles) throw new Error(`File count exceeds the limit of ${config.maxFiles}.`);
   const versions = new Map<string, FileVersion>();
   for (const [path, bytes] of contents) {
     validateRelative(path);
-    if (managedPath(config, resolve(config.root, path)) !== path) throw new Error(`路径不符合托管规则：${path}`);
-    if (bytes.length > config.maxFileBytes) throw new Error(`文件 ${path} 超出单文件上限 ${config.maxFileBytes} 字节。`);
+    if (managedPath(config, resolve(config.root, path)) !== path) throw new Error(`Path does not match the managed-file rules: ${path}`);
+    if (bytes.length > config.maxFileBytes) throw new Error(`File ${path} exceeds the per-file limit of ${config.maxFileBytes} bytes.`);
     const mode = (modes.get(path) ?? 0o644) & 0o777;
     const cached = previous?.contents.get(path) === bytes ? previous.manifest.files[path] : undefined;
     if (!cached) validateText(bytes, path);
@@ -189,8 +189,8 @@ export class FileIndex {
     const absolute = await safePath(this.config.root, path);
     const verifiedAt = BigInt(this.now()) * 1_000_000n;
     const info = await lstat(absolute, { bigint: true });
-    if (!info.isFile()) throw new Error(`托管路径不是普通文件：${path}`);
-    if (info.size > BigInt(this.config.maxFileBytes)) throw new Error(`文件 ${path} 超出单文件上限。`);
+    if (!info.isFile()) throw new Error(`Managed path is not a regular file: ${path}`);
+    if (info.size > BigInt(this.config.maxFileBytes)) throw new Error(`File ${path} exceeds the per-file limit.`);
     const cached = this.entries.get(path);
     if (!force && cached && sameFileInfo(info, cached.info) && !racilyClean(cached)) {
       if (stats) stats.reusedFiles++;
@@ -201,12 +201,12 @@ export class FileIndex {
     let bytes: Buffer;
     try {
       const before = await handle.stat({ bigint: true });
-      if (!sameFileInfo(info, before)) throw new Error(`读取期间文件发生变化，请重试：${path}`);
+      if (!sameFileInfo(info, before)) throw new Error(`File changed while reading. Try again: ${path}`);
       bytes = await handle.readFile();
       const after = await handle.stat({ bigint: true });
       const current = await lstat(absolute, { bigint: true });
       if (!sameFileInfo(before, after) || !sameFileInfo(after, current) || BigInt(bytes.length) !== after.size) {
-        throw new Error(`读取期间文件发生变化，请重试：${path}`);
+        throw new Error(`File changed while reading. Try again: ${path}`);
       }
     } finally { await handle.close(); }
     if (stats) { stats.readFiles++; stats.bytesRead += bytes.length; }
@@ -221,7 +221,7 @@ export class FileIndex {
 
   async scan(): Promise<{ snapshot: Snapshot; excluded: string[]; stats: ScanStats }> {
     const config = this.config;
-    if (await realpath(config.root) !== config.root) throw new Error("挂载目录的真实路径发生变化，请重新绑定。");
+    if (await realpath(config.root) !== config.root) throw new Error("The mount directory resolves to a different path. Mount it in a new session.");
     const entries = new Map<string, IndexedFile>();
     const contents = new Map<string, Buffer>();
     const versions = new Map<string, FileVersion>();
@@ -233,18 +233,18 @@ export class FileIndex {
         const absolute = join(dir, entry.name);
         const rel = relative(config.root, absolute);
         const reason = excludedReason(config, rel);
-        if (reason) { excluded.push(`${rel}：${reason}`); continue; }
-        if (entry.isSymbolicLink()) { excluded.push(`${rel}：符号链接`); continue; }
+        if (reason) { excluded.push(`${rel}: ${reason}`); continue; }
+        if (entry.isSymbolicLink()) { excluded.push(`${rel}: symbolic link`); continue; }
         if (entry.isDirectory()) { await safePath(config.root, rel); await visit(absolute); continue; }
-        if (!entry.isFile() || !managedPath(config, absolute)) { excluded.push(`${rel}：非托管文本类型`); continue; }
+        if (!entry.isFile() || !managedPath(config, absolute)) { excluded.push(`${rel}: unsupported managed text type`); continue; }
         // Count before reading the next file, including when the cache is warm.
-        if (contents.size >= config.maxFiles) throw new Error(`文件数超出上限 ${config.maxFiles}。`);
+        if (contents.size >= config.maxFiles) throw new Error(`File count exceeds the limit of ${config.maxFiles}.`);
         const file = await this.read(rel, stats);
         entries.set(rel, file);
         contents.set(rel, file.bytes);
         versions.set(rel, file.version);
         totalBytes += file.bytes.length;
-        if (totalBytes > config.maxTotalBytes) throw new Error(`正文总量超出上限 ${config.maxTotalBytes} 字节。`);
+        if (totalBytes > config.maxTotalBytes) throw new Error(`Total content exceeds the limit of ${config.maxTotalBytes} bytes.`);
       }
     };
     await visit(config.root);
@@ -262,10 +262,10 @@ export class FileIndex {
         const absolute = await safePath(this.config.root, path);
         try { await lstat(absolute); }
         catch (error) { if (isMissing(error)) { this.entries.delete(path); continue; } throw error; }
-        throw new Error(`写入后校验失败：${path}`);
+        throw new Error(`Verification after writing failed: ${path}`);
       }
       const actual = await this.read(path, undefined, true);
-      if (actual.version.hash !== expected.hash || actual.version.mode !== expected.mode) throw new Error(`写入后校验失败：${path}`);
+      if (actual.version.hash !== expected.hash || actual.version.mode !== expected.mode) throw new Error(`Verification after writing failed: ${path}`);
       this.entries.set(path, actual);
     }
   }

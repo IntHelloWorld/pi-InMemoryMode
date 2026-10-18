@@ -83,43 +83,44 @@ try {
   assert.equal(result.disposition, "handled");
   assert(notifications.some((message) => message.method === "notify"
     && message.message === "pi-inmemory-mode: development environment ready"));
-  assert(commands.some((command) => command.name === "memory"));
-  await request("prompt", { message: `/memory on ${documents}` });
-  await request("prompt", { message: "/memory status" });
-  assert(notifications.some((message) => message.method === "notify" && message.message.includes("In Memory：ready")));
+  assert(commands.some((command) => command.name === "inmem"));
+  assert(!commands.some((command) => command.name === "memory"), "The plugin must leave /memory available to other extensions");
+  await request("prompt", { message: `/inmem on ${documents}` });
+  await request("prompt", { message: "/inmem status" });
+  assert(notifications.some((message) => message.method === "notify" && message.message.includes("InMemory: ready")));
   const beforeOff = notifications.length;
-  await request("prompt", { message: "/memory off" });
+  await request("prompt", { message: "/inmem off" });
   assert(notifications.slice(beforeOff).some((message) => message.method === "notify" && message.notifyType === "error"));
   const afterOff = notifications.length;
-  await request("prompt", { message: "/memory status" });
-  assert(notifications.slice(afterOff).some((message) => message.method === "notify" && message.message.includes("In Memory：ready")));
+  await request("prompt", { message: "/inmem status" });
+  assert(notifications.slice(afterOff).some((message) => message.method === "notify" && message.message.includes("InMemory: ready")));
   const beforeExternal = notifications.length;
   await writeFile(join(documents, "sample.md"), "accepted external content");
   await delay(150);
   assert.equal(notifications.length, beforeExternal, "Idle file changes must wait for a boundary check");
-  await request("prompt", { message: "/memory status" });
-  assert(!notifications.slice(beforeExternal).some((message) => message.method === "notify" && message.message.includes("/memory sync")),
+  await request("prompt", { message: "/inmem status" });
+  assert(!notifications.slice(beforeExternal).some((message) => message.method === "notify" && message.message.includes("/inmem sync")),
     "Read-only status must not scan external files");
   assert.equal((await request("get_messages")).messages.filter((message) => message.customType === "inmemory.external-change").length, 0);
-  await request("prompt", { message: "/memory sync" });
+  await request("prompt", { message: "/inmem sync" });
   const accepted = (await request("get_messages")).messages.filter((message) => message.customType === "inmemory.external-change");
   assert.equal(accepted.length, 1);
   assert.deepEqual(accepted[0].details.changes, [{ path: "sample.md", kind: "modified" }]);
   await writeFile(join(documents, "sample.md"), "discarded external content");
-  await request("prompt", { message: "/memory recover" });
+  await request("prompt", { message: "/inmem recover" });
   assert.equal(await readFile(join(documents, "sample.md"), "utf8"), "accepted external content");
   assert.equal((await request("get_messages")).messages.filter((message) => message.customType === "inmemory.external-change").length, 1);
   const replacement = await request("new_session");
   assert.equal(replacement.cancelled, false);
-  await request("prompt", { message: "/memory status" });
-  assert(notifications.some((message) => message.method === "notify" && message.message === "会话类型：普通"));
+  await request("prompt", { message: "/inmem status" });
+  assert(notifications.some((message) => message.method === "notify" && message.message === "Session type: ordinary"));
   const left = notifications.length;
   await writeFile(join(documents, "sample.md"), "new session initial content");
   await delay(150);
-  assert(!notifications.slice(left).some((message) => message.method === "notify" && message.message.includes("/memory sync")),
+  assert(!notifications.slice(left).some((message) => message.method === "notify" && message.message.includes("/inmem sync")),
     "Departed InMemory session reported changes in its old directory");
   // A new session can acquire the directory after the old session releases ownership.
-  await request("prompt", { message: `/memory on ${documents}` });
+  await request("prompt", { message: `/inmem on ${documents}` });
   const state = await request("get_state");
   assert.equal(state.isStreaming, false);
   assert.equal(state.sessionFile, undefined);

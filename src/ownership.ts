@@ -38,7 +38,7 @@ async function registry<T>(operation: (owners: Owner[]) => T): Promise<T> {
       await setTimeout(20);
     }
   }
-  if (!locked) throw new Error("无法取得工作区所有权锁，请稍后重试。");
+  if (!locked) throw new Error("Cannot acquire the workspace ownership lock. Try again shortly.");
   try {
     let owners: Owner[] = [];
     try { owners = JSON.parse(await readFile(join(REGISTRY, "owners.json"), "utf8")); }
@@ -56,7 +56,7 @@ export class Ownership {
   async acquire(root: string): Promise<void> {
     await registry((owners) => {
       const conflict = owners.find((owner) => owner.token !== this.token && (inside(root, owner.root) || inside(owner.root, root)));
-      if (conflict) throw new Error(`目录已被另一个写入会话占用（进程 ${conflict.pid}）：${conflict.root}`);
+      if (conflict) throw new Error(`Directory is owned by another writing session (PID ${conflict.pid}): ${conflict.root}`);
       const own = owners.find((owner) => owner.token === this.token);
       if (own) own.root = root;
       else owners.push({ root, pid: process.pid, token: this.token });

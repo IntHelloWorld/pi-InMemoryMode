@@ -120,10 +120,10 @@ test("departure saves the route without comparing or accepting external files; e
     const pending = await first.session.extensionRunner.emit({ type: "session_before_switch", reason: "resume", targetSessionFile: "/other.jsonl" });
     assert.notEqual(pending?.cancel, true);
     assert.equal(first.checkpoints().at(-1)!.workingId, record.workingId);
-    await first.session.prompt("/memory sync");
+    await first.session.prompt("/inmem sync");
     const external = first.manager.getBranch().findLast((entry) => checkpointEntry(entry) && entry.data!.kind === "external")!;
     await leave(first);
-    assert.equal(first.manager.getLabel(external.id), "Memory：外部修改");
+    assert.equal(first.manager.getLabel(external.id), "InMemory: External changes");
     const file = first.manager.getSessionFile()!;
     await first.close(false);
     firstClosed = true;
@@ -148,7 +148,7 @@ test("accepting unchanged files is a no-op; legacy real sync still gets a readab
   try {
     await h.mount();
     const raw = structuredClone(h.manager.getEntries());
-    await h.session.prompt("/memory sync");
+    await h.session.prompt("/inmem sync");
     assert.deepEqual(h.manager.getEntries(), raw);
     await writeFile(join(h.docs, "chapter.md"), "external");
     const source = h.checkpoints().at(-1)!;
@@ -159,8 +159,10 @@ test("accepting unchanged files is a no-op; legacy real sync still gets a readab
       workingId: snapshot.id, baselineId: snapshot.id };
     await store.saveCheckpoint(record);
     const realSync = h.manager.appendCustomEntry(STATE_TYPE, record);
+    h.manager.appendLabelChange(realSync, "Memory：外部同步");
     const view = await tree(h);
-    assert.equal(view.nodes.find((node) => node.entry.id === realSync)?.label, "Memory：外部同步");
+    assert.equal(view.nodes.find((node) => node.entry.id === realSync)?.label, "InMemory: External sync");
+    assert.equal(h.manager.getLabel(realSync), "Memory：外部同步", "display translation must preserve raw legacy history");
     assert(view.ids.has(realSync));
   } finally { await h.close(); }
 });
@@ -176,7 +178,7 @@ test("recover keeps its ready state durable without adding a visible restore poi
     const before = await tree(first);
     const raw = structuredClone(first.manager.getEntries());
     await writeFile(join(first.docs, "chapter.md"), "discarded outside edit");
-    await first.session.prompt("/memory recover");
+    await first.session.prompt("/inmem recover");
     assert.equal(await first.text(), "saved progress");
     assert.deepEqual(first.manager.getEntries().slice(0, raw.length), raw);
     const position = first.manager.getLeafEntry()!;
@@ -236,7 +238,7 @@ test("legacy recovery nodes stay in raw history but disappear from the tree whil
     assert.deepEqual(second.manager.getEntry(id), raw.find((entry) => entry.id === id));
     assert.equal(second.manager.getLabel(id), "Memory：恢复完成");
     await writeFile(join(second.docs, "chapter.md"), "C");
-    await second.session.prompt("/memory sync");
+    await second.session.prompt("/inmem sync");
     const view = await tree(second);
     const external = view.nodes.find((node) => checkpointEntry(node.entry) && node.entry.data!.kind === "external");
     assert(external);
@@ -283,7 +285,7 @@ for (const state of ["changed-while-away", "pending-decision", "unfinished-journ
       assert.equal(second.requests.length, 0);
       assert.equal(await second.text(), beforeInput);
       assert.equal(second.notices.length, 1);
-      await second.session.prompt("/memory recover");
+      await second.session.prompt("/inmem recover");
       assert.equal(await second.text(), "initial\n");
       assert.equal(second.requests.length, 0);
       assert.equal(second.editorText, "next instruction");

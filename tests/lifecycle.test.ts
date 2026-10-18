@@ -33,14 +33,14 @@ test("idle external edits require explicit acceptance before a task or tree navi
     await h.session.prompt("blocked outside edit");
     assert.equal(h.requests.length, 1);
     assert.equal(h.checkpoints().at(-1)!.workingId, before);
-    await h.session.prompt("/memory sync");
+    await h.session.prompt("/inmem sync");
     h.respond("reviewed");
     await h.session.prompt("review outside edit");
     assert.equal(snapshotText(h.requests.at(-1)!), 'path="chapter.md" bytes=15\nexternal change');
     await writeFile(join(h.docs, "chapter.md"), "last outside edit");
     assert.equal((await h.session.navigateTree(initial.id)).cancelled, true);
     assert.equal(await h.text(), "last outside edit");
-    await h.session.prompt("/memory sync");
+    await h.session.prompt("/inmem sync");
     const external = h.manager.getBranch().findLast((entry) => entry.type === "custom" &&
       (entry.data as { kind?: string })?.kind === "external")!;
     await h.session.navigateTree(initial.id);

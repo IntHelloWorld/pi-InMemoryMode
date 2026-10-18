@@ -61,12 +61,12 @@ test("official Anthropic serializer keeps task prefix stable and accepts paired 
     assert.equal(firstBaseline?.text, 'path="chapter.md" bytes=8\ninitial\n');
     assert.equal(nextBaseline?.text, 'path="chapter.md" bytes=7\nupdated');
     const oldCall = payloads[2]!.messages.flatMap((message) => message.content).find((block) => block.type === "tool_use" && block.id === "w1");
-    assert.deepEqual(oldCall?.input, { path: "docs/chapter.md", content: "[历史正文已省略]" });
+    assert.deepEqual(oldCall?.input, { path: "docs/chapter.md", content: "[historical content omitted]" });
     const result = payloads[2]!.messages.flatMap((message) => message.content)
       .find((block) => block.type === "tool_result" && block.tool_use_id === oldCall?.id);
     assert(result);
     assert.equal(result.is_error, false);
-    assert.equal(result.content, "已成功。");
+    assert.equal(result.content, "Succeeded.");
     assert(payloads[0]!.messages.some((message) => message.content.some((block) => block.cache_control)));
     const usageRecords = h.manager.getEntries().filter((entry) => entry.type === "custom" && entry.customType === "inmemory.usage");
     assert(usageRecords.some((entry) => entry.type === "custom" && (entry.data as { cacheRead: number }).cacheRead === 64));
@@ -110,7 +110,7 @@ test("official serializer preserves interrupted tool pairs after recover and a n
     assert.equal(payloads.length, 2);
     const task = h.checkpoints().at(-1)!.task!;
     assert.equal(task.status, "incomplete");
-    await h.session.prompt("/memory recover");
+    await h.session.prompt("/inmem recover");
     assert.equal(payloads.length, 2);
     await h.session.prompt("continue the remaining work in a new task");
     assert.equal(await h.text(), "progress");

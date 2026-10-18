@@ -29,15 +29,15 @@ test("real Pi lifecycle freezes baseline, reads live memory, compresses only com
     const historyCall = h.requests[4]!.messages.flatMap((message) => message.role === "assistant" ? message.content : [])
       .find((block) => block.type === "toolCall" && block.id === "w1");
     assert(historyCall?.type === "toolCall");
-    assert.deepEqual(historyCall.arguments, { path: "docs/chapter.md", content: "[历史正文已省略]" });
+    assert.deepEqual(historyCall.arguments, { path: "docs/chapter.md", content: "[historical content omitted]" });
     const historyEdit = h.requests[4]!.messages.flatMap((message) => message.role === "assistant" ? message.content : [])
       .find((block) => block.type === "toolCall" && block.id === "e1");
     assert(historyEdit?.type === "toolCall");
-    assert.deepEqual(historyEdit.arguments, { path: "docs/chapter.md", edits: [{ oldText: "[历史正文已省略]", newText: "[历史正文已省略]" }] });
+    assert.deepEqual(historyEdit.arguments, { path: "docs/chapter.md", edits: [{ oldText: "[historical content omitted]", newText: "[historical content omitted]" }] });
     const compactResult = h.requests[4]!.messages.find((message) => message.role === "toolResult" && message.toolCallId === historyCall.id);
     assert(compactResult?.role === "toolResult");
     assert.equal(compactResult.isError, false);
-    assert.deepEqual(compactResult.content, [{ type: "text", text: "已成功。" }]);
+    assert.deepEqual(compactResult.content, [{ type: "text", text: "Succeeded." }]);
     // The short model-facing marker still resolves to full recovery metadata and original bytes.
     const omission = h.checkpoints().at(-1)!.omissions.find((item) => item.callId === historyCall.id)!;
     const source = h.manager.getEntry(omission.entryId);
@@ -135,7 +135,7 @@ test("external mutation during a read is detected at settlement and blocks new r
     assert.equal(h.checkpoints().at(-1)!.pendingExternal, true);
     await h.session.prompt("blocked");
     assert.equal(h.requests.length, 2);
-    await h.session.prompt("/memory sync");
+    await h.session.prompt("/inmem sync");
     h.respond("recovered");
     await h.session.prompt("continue");
     assert.equal(snapshotText(h.requests.at(-1)!), 'path="chapter.md" bytes=8\nexternal');
@@ -157,7 +157,7 @@ test("restart preserves conflicting disk and allows restoring checkpoint", async
     assert.equal(await second.text(), "edited while away");
     await second.session.prompt("blocked");
     assert.equal(second.requests.length, 0);
-    await second.session.prompt("/memory recover");
+    await second.session.prompt("/inmem recover");
     assert.equal(await second.text(), "saved");
     second.respond("continue report");
     await second.session.prompt("continue");
@@ -174,7 +174,7 @@ test("capacity failures actually cancel before a provider request, without trunc
     await h.session.prompt("edit");
     assert.equal(h.requests.length, 0);
     assert.equal(await h.text(), "initial\n");
-    assert(h.abortedRequests > 0 || h.notices.some((notice) => notice.includes("容量") || notice.includes("预算")));
+    assert(h.abortedRequests > 0 || h.notices.some((notice) => notice.includes("capacity") || notice.includes("budget")));
   } finally { await h.close(); }
 });
 

@@ -49,34 +49,34 @@ test("conflict notices list detected file and permission changes; reload and sta
       { path: "edit.md", kind: "modified" }, { path: "mode.md", kind: "modified" }, { path: unusualPath, kind: "added" },
     ]);
     const expectedRows = [
-      '  • 修改及权限  "both.md"', '  • 删除  "delete.txt"', '  • 修改  "edit.md"', '  • 权限  "mode.md"',
-      `  • 新增  ${JSON.stringify(unusualPath)}`,
+      '  • Content and permissions  "both.md"', '  • Deleted  "delete.txt"', '  • Modified  "edit.md"', '  • Permissions  "mode.md"',
+      `  • Added  ${JSON.stringify(unusualPath)}`,
     ];
     const assertList = (notice: string) => {
-      assert.deepEqual(notice.split("\n").filter((line) => /^  • (新增|修改|删除|权限)/.test(line)), expectedRows);
+      assert.deepEqual(notice.split("\n").filter((line) => /^  • (Added|Modified|Deleted|Permissions|Content and permissions)/.test(line)), expectedRows);
       assert(!notice.includes("unchanged.md"));
       assert(!notice.includes("outside content must not appear in the notice"));
     };
     assertList(h.notices.at(-1)!);
-    await h.session.prompt("/memory status");
+    await h.session.prompt("/inmem status");
     assertList(h.notices.at(-1)!);
     const notices = h.notices.length;
     await h.session.reload();
     assert.equal(h.notices.length, notices);
     await writeFile(join(h.docs, "later.md"), "not scanned yet");
-    await h.session.prompt("/memory status");
+    await h.session.prompt("/inmem status");
     assertList(h.notices.at(-1)!);
     assert(!h.notices.at(-1)!.includes("later.md"));
     assert.equal(scans, 1);
-    await h.session.prompt("/memory recover");
+    await h.session.prompt("/inmem recover");
     assert.equal(await h.text("edit.md"), "before");
     await assert.rejects(h.text(unusualPath), { code: "ENOENT" });
     await assert.rejects(h.text("later.md"), { code: "ENOENT" });
     assert.equal(h.checkpoints().at(-1)!.externalSnapshotId, undefined);
     const afterRecovery = h.notices.length;
-    await h.session.prompt("/memory status");
+    await h.session.prompt("/inmem status");
     assert.equal(h.notices.length, afterRecovery + 1);
-    assert(!h.notices.at(-1)!.includes("未同步文件"));
+    assert(!h.notices.at(-1)!.includes("Pending files"));
     assert.deepEqual(h.errors, []);
   } finally { Workspace.prototype.disk = disk; await h.close(); }
 });
@@ -92,7 +92,7 @@ test("first-request conflict preserves the submission; sync records versions and
     await writeFile(join(h.docs, "nested/new.md"), "new file");
     const notices = h.notices.length;
     await setTimeout(1100);
-    await h.session.prompt("/memory status");
+    await h.session.prompt("/inmem status");
     assert.equal(h.checkpoints().at(-1)!.id, initial.id);
     assert.equal(h.notices.length, notices + 1);
     const instruction = "请逐条执行这些要求：\n" + "保留每一条详细要求。\n".repeat(100);
@@ -101,7 +101,7 @@ test("first-request conflict preserves the submission; sync records versions and
     assert.equal(h.checkpoints().filter((cp) => cp.kind === "task-start").length, 0);
     assert.equal(h.checkpoints().at(-1)!.task, undefined);
     const raw = structuredClone(h.manager.getEntries());
-    await h.session.prompt("/memory sync");
+    await h.session.prompt("/inmem sync");
     assert.equal(h.requests.length, 0);
     assert.equal(h.editorText, instruction);
     assert.deepEqual(h.manager.getEntries().slice(0, raw.length), raw);
@@ -126,7 +126,7 @@ test("first-request conflict preserves the submission; sync records versions and
     assert.equal(prompts.length, 1);
     assert.equal(externalMessages(h).length, 1);
     const unchanged = structuredClone(h.manager.getEntries());
-    await h.session.prompt("/memory sync");
+    await h.session.prompt("/inmem sync");
     assert.deepEqual(h.manager.getEntries(), unchanged);
     assert.deepEqual(h.errors, []);
   } finally { await h.close(); }
@@ -145,7 +145,7 @@ test("recover before the first request preserves the previous completed task and
     assert.equal(h.requests.length, 1);
     assert.equal(h.checkpoints().at(-1)!.task?.id, completed.task!.id);
     assert.equal(h.checkpoints().at(-1)!.task?.status, "completed");
-    await h.session.prompt("/memory recover");
+    await h.session.prompt("/inmem recover");
     assert.equal(await h.text(), "initial\n");
     assert.equal(h.requests.length, 1);
     assert.equal(h.editorText, instruction);
@@ -176,7 +176,7 @@ test("write interruption preserves queued instructions and sync ends the incompl
     const interrupted = h.checkpoints().at(-1)!;
     assert.equal(interrupted.task?.status, "incomplete");
     assert.equal(interrupted.pendingExternal, true);
-    await h.session.prompt("/memory sync");
+    await h.session.prompt("/inmem sync");
     assert.equal(h.requests.length, 1);
     assert.equal(h.editorText, "queued requirement one\n\nqueued requirement two");
     assert.equal(h.checkpoints().find((cp) => cp.id === interrupted.id)!.task?.status, "incomplete");
@@ -208,7 +208,7 @@ test("recover after interruption restores the latest successful writes, keeps th
     const interrupted = h.checkpoints().at(-1)!;
     assert.notEqual(interrupted.workingId, interrupted.baselineId);
     const raw = structuredClone(h.manager.getEntries());
-    await h.session.prompt("/memory recover");
+    await h.session.prompt("/inmem recover");
     assert.equal(h.requests.length, 3);
     assert.equal(await h.text(), "task progress");
     await assert.rejects(h.text("outside.md"), { code: "ENOENT" });
@@ -240,7 +240,7 @@ test("sync preserves complete interrupted tool pairs and records the changed ver
     await h.mount();
     h.respond([call("managed", "write", { path: "docs/chapter.md", content: "managed write" })], "unfinished report");
     await h.session.prompt("edit before outside change");
-    await h.session.prompt("/memory sync");
+    await h.session.prompt("/inmem sync");
     const message = externalMessages(h)[0]!;
     const raw = h.manager.getBranch();
     const result = raw.findIndex((entry) => entry.type === "message" && entry.message.role === "toolResult" && entry.message.toolCallId === "managed");
@@ -267,7 +267,7 @@ test("settlement detects an external save after the final report before marking 
     assert.equal(h.requests.length, 1);
     assert.equal(h.checkpoints().at(-1)!.task?.status, "incomplete");
     assert.equal(h.checkpoints().at(-1)!.pendingExternal, true);
-    await h.session.prompt("/memory recover");
+    await h.session.prompt("/inmem recover");
     assert.equal(await h.text(), "initial\n");
     assert.equal(h.requests.length, 1);
     assert.deepEqual(h.errors, []);
@@ -294,7 +294,7 @@ test("write-commit check stops an external overwrite while read-only continuatio
         assert.deepEqual(result.message.content, [{ type: "text", text: "initial\n" }]);
         assert.equal(snapshotText(h.requests[1]!), snapshotText(h.requests[0]!));
       }
-      await h.session.prompt("/memory recover");
+      await h.session.prompt("/inmem recover");
       assert.equal(await h.text(), "initial\n");
       assert.deepEqual(h.errors, []);
     } finally { await h.close(); }
@@ -324,7 +324,7 @@ test("automatic comparisons happen once per task start, before commits, and at f
     assert.equal(h.requests.length, 6);
     assert.equal(comparisons, 5); // A new read-only task adds only its start and final checks.
     assert.notEqual(h.checkpoints().at(-1)!.task!.id, taskId);
-    await h.session.prompt("/memory status");
+    await h.session.prompt("/inmem status");
     await h.session.extensionRunner.emit({ type: "session_before_switch", reason: "resume", targetSessionFile: "/other.jsonl" });
     await h.session.reload();
     assert.equal(comparisons, 5);
@@ -346,12 +346,12 @@ test("pending decisions block compaction; retired commands and parameter forms h
     await h.session.prompt("pending instruction");
     const before = structuredClone(h.manager.getEntries());
     await assert.rejects(h.session.compact(), /cancelled/i);
-    for (const command of ["/memory save-change", "/memory continue", "/memory recover --from-disk", "/memory sync --force"]) {
+    for (const command of ["/inmem save-change", "/inmem continue", "/inmem recover --from-disk", "/inmem sync --force"]) {
       await h.session.prompt(command);
       assert.equal(await h.text(), "pending");
       assert.deepEqual(h.manager.getEntries(), before);
     }
-    await h.session.prompt("/memory recover");
+    await h.session.prompt("/inmem recover");
     assert.equal(await h.text(), "initial\n");
     assert.equal(h.editorText, "pending instruction");
     assert.deepEqual(h.errors, []);
@@ -373,12 +373,12 @@ test("atomic saves and permission changes are detected at the next task start; e
     await rename(temporary, join(h.docs, "chapter.md"));
     await h.session.prompt("blocked after atomic save");
     assert.equal(h.requests.length, 1);
-    await h.session.prompt("/memory sync");
+    await h.session.prompt("/inmem sync");
     const mode = (await stat(join(h.docs, "chapter.md"))).mode & 0o777;
     await chmod(join(h.docs, "chapter.md"), mode === 0o600 ? 0o640 : 0o600);
     await h.session.prompt(h.editorText);
     assert.equal(h.requests.length, 1);
-    await h.session.prompt("/memory sync");
+    await h.session.prompt("/inmem sync");
     assert.equal(externalMessages(h).length, 2);
     h.respond("reviewed");
     await h.session.prompt(h.editorText);
@@ -396,7 +396,7 @@ test("recover backs up discarded external files and leaves successful checkpoint
     const cp = h.checkpoints().at(-1)!;
     await writeFile(join(h.docs, "chapter.md"), "discarded outside edit");
     await writeFile(join(h.docs, "extra.md"), "outside extra");
-    await h.session.prompt("/memory recover");
+    await h.session.prompt("/inmem recover");
     assert.equal(await h.text(), "saved version");
     await assert.rejects(h.text("extra.md"), { code: "ENOENT" });
     const store = new Store(cp.config);
@@ -427,7 +427,7 @@ for (const started of [false, true]) {
       await first.close(false);
       second = await harness({ files: {}, existing: { cwd: first.cwd, manager: SessionManager.open(file) } });
       assert.equal(await second.text(), "outside");
-      await second.session.prompt("/memory recover");
+      await second.session.prompt("/inmem recover");
       assert.equal(await second.text(), started ? "saved progress" : "initial\n");
       assert.equal(second.requests.length, 0);
       if (!started) assert.equal(second.editorText, "original instruction");

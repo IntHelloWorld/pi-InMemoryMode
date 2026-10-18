@@ -18,7 +18,8 @@ interface DraftState {
   items: Draft[];
   delivered: string[];
   blockedSubmissionId?: string;
-  restored?: { ids: string[]; images?: ImageContent[] };
+  restored?: { ids: string[]; images?: ImageContent[]; text?: string };
+  editorDraft?: string;
 }
 
 /** Drafts are session metadata, never executable model instructions until explicitly delivered. */
@@ -39,6 +40,8 @@ export class Drafts {
   get blockedSubmission(): Draft | undefined { return this.state.items.find((item) => item.id === this.state.blockedSubmissionId); }
 
   capture(event: InputEvent, ctx: ExtensionContext, ready: boolean, pendingReason?: string): InputEventResult {
+    // The user is submitting the editor's actual contents, including any IDE context.
+    delete this.state.editorDraft;
     const restored = ctx.isIdle() ? this.state.restored : undefined;
     const images = event.images?.length ? event.images : restored?.images;
     if (restored) {
@@ -50,8 +53,8 @@ export class Drafts {
     this.state.items.push(draft);
     this.save();
     if (!ready || !ctx.isIdle()) {
-      ctx.ui.notify(ready ? "补充指令已保存，等待当前任务的完整工具边界。"
-        : `指令已保留，任务尚未开始。\n${pendingReason ?? "请先处理工作区状态，指令会在处理后回填输入框。"}`, ready ? "info" : "warning");
+      ctx.ui.notify(ready ? "The additional instruction is saved and will wait for a complete tool boundary in the current task."
+        : `The instruction is preserved. The task has not started.\n${pendingReason ?? "Resolve the workspace state first. The instruction will then be restored to the input."}`, ready ? "info" : "warning");
       return { action: "handled" };
     }
     return images ? { action: "transform", text: event.text, images } : { action: "continue" };
@@ -86,13 +89,33 @@ export class Drafts {
     return !!id && (this.state.delivered.includes(id) || this.state.items.some((item) => item.id === id && item.kind !== "submission"));
   }
 
+  stage(text: string, ctx: ExtensionContext): void {
+    const existing = ctx.ui.getEditorText();
+    this.state.editorDraft = existing ? `${existing}\n\n${text}` : text;
+    this.save();
+    ctx.ui.setEditorText(this.state.editorDraft);
+  }
+
+  consumeEditorDraft(): void {
+    if (this.state.editorDraft === undefined) return;
+    delete this.state.editorDraft;
+    delete this.state.restored;
+    this.save();
+  }
+
   restore(ctx: ExtensionContext): void {
     delete this.state.blockedSubmissionId;
-    if (!this.state.items.length) return;
+    if (!this.state.items.length && this.state.editorDraft === undefined) return;
+    const existing = ctx.ui.getEditorText() || this.state.editorDraft || "";
+    const previous = this.state.restored;
+    const previouslyRendered = previous?.text && (existing === previous.text || existing.startsWith(`${previous.text}\n\n`));
+    const missing = this.state.items.filter((item) => !previouslyRendered || !previous.ids.includes(item.id));
+    const text = [...missing.map((item) => item.text), existing].filter(Boolean).join("\n\n");
     this.state.restored = { ids: this.state.items.map((item) => item.id),
-      images: this.state.items.flatMap((item) => item.images ?? []) };
+      images: this.state.items.flatMap((item) => item.images ?? []), text };
+    this.state.editorDraft = text;
     this.save();
-    ctx.ui.setEditorText(this.state.items.map((item) => item.text).join("\n\n"));
-    ctx.ui.notify(`待执行指令已回填输入框${this.state.restored.images?.length ? `，${this.state.restored.images.length} 个附件会随草稿再次发送` : ""}；发送后才开始新任务。`, "info");
+    ctx.ui.setEditorText(text);
+    ctx.ui.notify(`The pending instruction is back in the input${this.state.restored.images?.length ? ` with ${this.state.restored.images.length} attachments to resend` : ""}. Send it to start a new task.`, "info");
   }
 }
