@@ -8,7 +8,8 @@
     "skipLibCheck": true,
     "verbatimModuleSyntax": true,
     "erasableSyntaxOnly": true,
+    "allowImportingTsExtensions": true,
     "types": ["node"]
   },
-  "include": ["extension.ts"]
+  "include": ["extension.ts", "src/**/*.ts", "tests/**/*.ts"]
 }

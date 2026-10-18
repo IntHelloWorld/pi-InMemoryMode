@@ -1,50 +1,133 @@
-# Pi 插件开发环境
+# Pi InMemoryMode
 
-这是一个独立的 Pi 扩展项目，不是 Pi 核心的 fork。当前仅提供开发环境和用于确认加载成功的 `/plugin-dev` 命令，尚未实现 InMemoryMode 功能。
+**English** | [简体中文](README.zh-CN.md)
 
-## 本机启动
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Node.js 24](https://img.shields.io/badge/Node.js-24-339933.svg)](.nvmrc)
+[![Pi 1.3.0](https://img.shields.io/badge/Pi-1.3.0-blue.svg)](https://github.com/earendil-works/pi)
+
+A [Pi](https://github.com/earendil-works/pi) extension for editing text documents with a stable task context and recoverable file versions.
+
+At the start of each user task, InMemoryMode places the managed files' full text before the instruction. Successful edits update files and working memory immediately, while the initial snapshot stays fixed for that task. The next task receives a fresh snapshot. Pi's native `/tree` restores the corresponding files and conversation branch together.
+
+**Status:** experimental, v0.1.0. Distributed as source; not published to npm. Commands and notices are currently in Chinese. Requires **Node.js 24** and **Pi 1.3.0**; the included UI compatibility patch checks that exact Pi version.
+
+## Features
+
+- **Stable task context:** tool continuations and additional instructions share the same starting snapshot.
+- **Recoverable editing:** create, edit, move, and delete files while preserving original bytes, line endings, and ordinary permissions.
+- **Branch-aware history:** restore supported checkpoints with `/tree`; original chat and tool records remain intact.
+- **Explicit external changes:** choose whether to accept an external edit or restore the last valid working state.
+- **On-demand file checks:** reuse verified content and hashes for unchanged files, with additional checks for recent timestamps. No file watcher or polling.
+- **Smaller later requests:** omit repeated edit bodies from completed tasks in the derived model input, preserving raw session history.
+
+## Quick start
 
 ```bash
-cd /Users/cue/pi-InMemoryMode
+git clone https://github.com/IntHelloWorld/pi-InMemoryMode.git
+cd pi-InMemoryMode
+npm ci --ignore-scripts
 npm run dev
 ```
 
-进入 Pi 后输入 `/plugin-dev`，应显示插件已加载的通知。修改 `extension.ts` 后，在 Pi 中执行 `/reload` 重新加载。
+Before the first chat message in the new Pi session, run:
 
-本机已单独安装 Pi，可在任意工作目录运行 `pi`。模型账号通过 Pi 内的 `/login` 配置；验证插件加载不需要账号或模型调用。
+```text
+/memory on examples/documents
+```
 
-## 安装与检查
+Then ask Pi to edit the example, such as “Add three sections to this outline.” Configure your model through Pi's `/login` if needed. Use `/tree` to select a completed task and restore its files. Selecting a user instruction returns to the state before that instruction.
 
-使用 Node.js 24 LTS（版本见 `.nvmrc`），然后执行：
+InMemory is a dedicated session type. Create it before chatting; use `/new` for an ordinary session or a different managed directory. Existing InMemory sessions have an `[InMemory]` badge in `/resume`.
+
+### Use in another project
+
+If you already use a globally installed **Pi 1.3.0**, run these commands from the cloned repository:
+
+```bash
+pi install /absolute/path/to/pi-InMemoryMode
+npm run setup:tree -- --global
+```
+
+Restart Pi, open it in your project, and run `/memory on ./docs` before the first chat message. For a temporary load, first prepare the compatibility patch, then run `pi -e /absolute/path/to/pi-InMemoryMode` in your project.
+
+`npm run dev` and `npm test` install the UI patch into the project's local Pi dependency. `setup:tree -- --global` also patches the global installation, enabling checkpoint filtering, direct tree navigation without a summary dialog, and session badges. It validates the host version, keeps original-file backups, and does not change global settings. **Restart Pi after patching; `/reload` only reloads the extension.** Reapply after reinstalling Pi. To undo the patch, run `npm run setup:tree -- --global --restore` and restart Pi.
+
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `/memory on [directory]` | Create an InMemory session before chatting; defaults to Pi's working directory. |
+| `/memory status` | Show the last known state without scanning files. |
+| `/memory sync` | Accept current external changes and record their file version. |
+| `/memory recover` | Restore the last valid working state, retaining successful assistant edits. |
+| `/tree` | Restore a supported file checkpoint and its conversation branch. |
+| `/resume` | Open an existing ordinary or InMemory session. |
+| `/new` | Start a new session. |
+
+`sync` and `recover` wait for a new instruction; neither automatically calls the model. To undo assistant edits, select an earlier checkpoint in `/tree`.
+
+## External edits and file versions
+
+Automatic checks run before a new task, before a managed write or tree restore, and before task completion. They compare disk files against the last valid working snapshot. Detected external changes pause the task and require `sync` or `recover`; they are never silently accepted.
+
+Checks still traverse directories to discover added, removed, or moved files. Verified file information allows unchanged bodies and hashes to be reused. Recent timestamps receive conservative content checks, and a plain `touch` does not create a new file version. The cache is local to a workspace instance and is rebuilt at the next check after reloading a session. This follows Git's [index metadata](https://git-scm.com/docs/gitformat-index) and [racy timestamp](https://git-scm.com/docs/racy-git) principles.
+
+Versions are stored under `.pi/inmemory/<workspace-id>/` in Pi's working directory, using SHA-256 content objects, immutable manifests, checkpoints, and recovery journals. No Git repository is required for the managed documents. History is not automatically deleted.
+
+## Configuration
+
+Create `.pi/inmemory.json` in **Pi's working directory** before creating the InMemory session:
+
+```json
+{
+  "extensions": [".md", ".txt", ".json", ".yaml", ".yml", ".toml"],
+  "exclude": ["archive", "drafts/old.md"],
+  "includeHidden": false,
+  "maxFiles": 100,
+  "maxFileBytes": 262144,
+  "maxTotalBytes": 1048576,
+  "maxSnapshotTokens": 32768
+}
+```
+
+Files must be valid UTF-8. `extensions` replaces the default list; `exclude` contains relative path prefixes, not globs. Management directories, dependencies, build output, and sensitive account files are excluded. Symlinks are not followed. A session's directory and configuration are fixed when it is created.
+
+## Limitations
+
+- The UI patch supports Pi **1.3.0** only. InMemory sessions do not support `/fork` or arbitrary intermediate tool checkpoints.
+- External processes can still write to disk. Boundary checks do not provide operating-system isolation, and multi-file recovery uses journals rather than a directory-wide atomic replacement.
+- Snapshot capacity uses a conservative token estimate. Requests stop when limits are exceeded; file bodies are not truncated.
+- Claude request serialization and cache-marker placement are covered by local adapter tests. **Live-provider cache hit rates and cost savings have not been measured.** Other providers retain the host's cache behavior.
+
+## Development
 
 ```bash
 npm ci --ignore-scripts
 npm run check
+npm test
 npm run smoke
 ```
 
-`smoke` 在临时配置目录中启动 Pi，通过 RPC 验证包发现、命令注册、命令执行和通知。它使用 `--no-session`，不调用模型，也不写入个人 Pi 配置。
+Tests use isolated temporary directories, the real Pi SDK, deterministic simulated model responses, and the official Anthropic serializer. The CLI/RPC smoke test does not call a model or alter personal Pi settings. See [CONTRIBUTING.md](CONTRIBUTING.md) for development conventions.
 
-## 项目结构
-
-- `extension.ts`：扩展入口，导出接收 `ExtensionAPI` 的函数。
-- `package.json`：`pi.extensions` 声明扩展入口；Pi 是宿主提供的 peer dependency，同时作为开发依赖提供 CLI 和类型。
-- `tsconfig.json`：严格类型检查，不生成编译产物；Pi 直接加载 TypeScript。
-- `smoke.mjs`：不依赖模型的加载验证。
-- `.dev/`：仅本机保留的参考资料，不进入 GitHub 或 npm 包。
-
-## 在其他工作目录试用
-
-```bash
-pi -e /Users/cue/pi-InMemoryMode
+```text
+extension.ts          Pi extension entry point
+src/                  Workspace, versions, tools, context, and session integration
+tests/                Functional and integration tests
+scripts/              Reversible Pi UI compatibility patch
+examples/documents/   Small sample workspace
+docs/                 Usage, design, and implementation notes
+smoke.mjs             CLI/RPC smoke test
 ```
 
-需要长期安装时，可以在 Pi 所在环境中执行 `pi install /Users/cue/pi-InMemoryMode`。开发阶段使用 `-e` 即可。
+## Documentation
 
-## 官方资料
+- [Detailed usage guide (中文)](docs/usage.zh-CN.md)
+- [Design baseline (中文)](docs/design.md) — original design and acceptance criteria.
+- [Implementation and validation (中文)](docs/implementation.md) — current behavior and verification boundaries.
+- [Pi extension documentation](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md)
 
-- [扩展接口与示例](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md)
-- [插件包结构与依赖约定](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/packages.md)
-- [RPC 命令](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/rpc-commands.md)
+## License
 
-`private: true` 表示当前是开发工程；准备发布到 npm 时再补齐发布信息并移除此字段。
+[MIT](LICENSE) © 2026 IntHelloWorld. See [third-party notices](THIRD_PARTY_NOTICES.md) for upstream attribution.
